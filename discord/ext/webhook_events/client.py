@@ -69,7 +69,7 @@ class Client(discord.Client):
     connect_to_ws: :class:`bool`
         Whether to connect to the Discord Gateway. Please note that setting this to ``False`` may result
         on caching issues, objects being incomplete, ``get_`` methods returning ``None`` always, or
-        inneccessary API calls. Defaults to ``True``.
+        unneccessary API calls. Defaults to ``True``.
     **kwargs
         Other parameters passed to :class:`discord.Client`
     """
