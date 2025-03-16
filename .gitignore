@@ -1,0 +1,12 @@
+*.json
+*.py[cod]
+*.log
+*.egg-info
+venv
+.venv
+docs/_build
+.idea
+build
+__pycache__/
+dist/
+.pypirc

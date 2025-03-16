@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "discord-ext-webhook-events"
+description = "A simple discord.py extension that allows receiving webhook events"
+readme = { file = "README.md", content-type = "text/markdown"}
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+authors = [{ name = "Developer Anonymous (aka DA344)" }]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Framework :: FastAPI",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Typing :: Typed",
+]
+dynamic = ["version", "dependencies"]
+
+[tool.setuptools]
+packages = [
+    "discord.ext.webhook_events",
+]
+include-package-data = true
+
+[tool.pyright]
+include = [
+    "discord/ext/webhook_events",
+]
+exclude = [
+    "**/__pycache__",
+    "build",
+    "dist",
+    "docs",
+]
+reportUnnecessaryTypeIgnoreComment = "warning"
+reportUnusedImport = "error"
+pythonVersion = "3.9"
+typeCheckingMode = "basic"
