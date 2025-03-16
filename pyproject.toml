@@ -33,6 +33,7 @@ include-package-data = true
 [tool.pyright]
 include = [
     "discord/ext/webhook_events",
+    "discord/ext/webhook_events/types",
 ]
 exclude = [
     "**/__pycache__",
@@ -44,3 +45,13 @@ reportUnnecessaryTypeIgnoreComment = "warning"
 reportUnusedImport = "error"
 pythonVersion = "3.9"
 typeCheckingMode = "basic"
+
+[tool.black]
+line-length = 125
+skip-string-normalization = true
+
+[tool.isort]
+profile = "black"
+combine_as_imports = true
+combine_star = true
+line_length = 125

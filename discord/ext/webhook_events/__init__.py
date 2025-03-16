@@ -9,10 +9,10 @@ Webhook Events from Discord.
 :license: MIT, see LICENSE for more details.
 """
 
-__title__ = 'discord-ext-webhook-events'
-__author__ = 'Developer Anonymous (aka DA344)'
-__license__ = 'MIT'
-__copyright__ = 'Copyright 2025-present Developer Anonymous (aka DA344)'
-__version__ = '0.1.0a'
+__title__ = "discord-ext-webhook-events"
+__author__ = "Developer Anonymous (aka DA344)"
+__license__ = "MIT"
+__copyright__ = "Copyright 2025-present Developer Anonymous (aka DA344)"
+__version__ = "0.1.0a"
 
 from .client import *

@@ -29,13 +29,13 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 import discord
 from discord.ext import commands
-from quart import Quart, Response, jsonify, request
+from aiohttp.web import Application, AppRunner, route, Request, Response, json_response, TCPSite
 
 if TYPE_CHECKING:
     from .types.events import Event as EventPayload
 
 logger = logging.getLogger(__name__)
-T = TypeVar('T', bound=Quart, covariant=True)
+T = TypeVar('T', bound=Application, covariant=True)
 MISSING = discord.utils.MISSING
 
 __all__ = (
@@ -56,7 +56,7 @@ class Client(discord.Client):
         The intents of the client.
     debug: :class:`bool`
         Whether to print debug tracebacks when an error occurs.
-    app_cls: Type[:class:`quart.Quart`]
+    app_cls: Type[:class:`aiohttp.web.Application`]
         The type to instate for the server.
     server_kwargs: Dict[:class:`str`, Any]
         The kwargs to pass to ``app_cls`` constructor.
@@ -79,7 +79,7 @@ class Client(discord.Client):
         *,
         intents: discord.Intents,
         debug: bool = False,
-        app_cls: type[T] = Quart,
+        app_cls: type[T] = Application,
         server_kwargs: dict[str, Any] | None = None,
         http_interactions: bool = False,
         connect_to_ws: bool = True,
@@ -87,30 +87,28 @@ class Client(discord.Client):
     ) -> None:
         super().__init__(intents=intents, **kwargs)
         self._debug: bool = debug
+        self._server = app_cls(**(server_kwargs or {}))
 
-        if app_cls is Quart:
-            self._server = Quart(
-                __name__,
-                **(server_kwargs or {}),
-            )
-        else:
-            self._server = app_cls(
-                __name__,
-                **(server_kwargs or {}),
-            )
-
-        self._server.route('/', methods=['PING', 'POST'])(self.__route)
+        routes = [
+            route('POST', '/', self.__route),
+        ]
 
         if http_interactions:
-            self._server.route('/interactions', methods=['POST'])(self.__interactions_route)
+            routes.append(
+                route(
+                    'POST', '/interactions', self.__interactions_route
+                )
+            )
 
+        self._server.add_routes(routes)
+        self.__runner: AppRunner = AppRunner(self._server)
+        self.__site: TCPSite | None = None
         self.__bot_task: asyncio.Task[None] | None = None
         self.__server_task: asyncio.Task[None] | None = None
-        self.__web_data: tuple[str, int] | None = None
         self.connect_to_ws: bool = connect_to_ws
 
-    async def __route(self) -> Any:
-        data = await request.json
+    async def __route(self, request: Request) -> Any:
+        data = await request.json()
         type = data.get('type')
 
         if type == 0:
@@ -122,16 +120,17 @@ class Client(discord.Client):
         else:
             return Response(status=400)
 
-    async def __interactions_route(self) -> Any:
-        data = await request.json
+    async def __interactions_route(self, request: Request) -> Response:
+        data = await request.json()
         type = data.get('type')
 
         if type == 1:
-            return jsonify({'type': 1})
+            return json_response({'type': 1})
         else:
             # this should work as expected because "data" is the
             # received interaction itself
             self._connection.parse_interaction_create(data)
+            return Response(status=204)
 
     def _dispatch_webhook_event(self, event: EventPayload) -> None:
         if event['type'] == 'APPLICATION_AUTHORIZED':
@@ -164,8 +163,14 @@ class Client(discord.Client):
             bot_task = super().start(token, reconnect=reconnect)
         else:
             bot_task = self.login(token)
-        server_task = self._server.run_task(host, port, self._debug)
-        self.__web_data = (host, port)
+
+        await self.__runner.setup()
+        self.__site = TCPSite(
+            self.__runner,
+            host,
+            port,
+        )
+        server_task = self.__site.start()
 
         self.__bot_task = asyncio.create_task(bot_task)
         self.__server_task = asyncio.create_task(server_task)
@@ -214,17 +219,8 @@ class Client(discord.Client):
             if self._ready is not MISSING:
                 self._ready.clear()
 
-            if self.__web_data is not None:
-                async with self.http._HTTPClient__session.get(  # type: ignore
-                    f'http://{self.__web_data[0]}:{self.__web_data[1]}/',
-                    json={
-                        'type': 0,
-                    }
-                ) as resp:
-                    close_server = 300 > resp.status >= 200
-
-            if close_server:
-                await self._server.shutdown()
+            if self.__site is not None:
+                await self.__site.stop()
 
             await self.http.close()
 
@@ -232,7 +228,6 @@ class Client(discord.Client):
 
         self._closing_task = asyncio.create_task(_close())
         await self._closing_task
-
 
 
 class AutoShardedClient(discord.AutoShardedClient):
@@ -245,7 +240,7 @@ class AutoShardedClient(discord.AutoShardedClient):
         The intents of the client.
     debug: :class:`bool`
         Whether to print debug tracebacks when an error occurs.
-    app_cls: Type[:class:`quart.Quart`]
+    app_cls: Type[:class:`aiohttp.web.Application`]
         The type to instate for the server.
     server_kwargs: Dict[:class:`str`, Any]
         The kwargs to pass to ``app_cls`` constructor.
@@ -268,7 +263,7 @@ class AutoShardedClient(discord.AutoShardedClient):
         *,
         intents: discord.Intents,
         debug: bool = False,
-        app_cls: type[T] = Quart,
+        app_cls: type[T] = Application,
         server_kwargs: dict[str, Any] | None = None,
         http_interactions: bool = False,
         connect_to_ws: bool = True,
@@ -276,30 +271,28 @@ class AutoShardedClient(discord.AutoShardedClient):
     ) -> None:
         super().__init__(intents=intents, **kwargs)
         self._debug: bool = debug
+        self._server = app_cls(**(server_kwargs or {}))
 
-        if app_cls is Quart:
-            self._server = Quart(
-                __name__,
-                **(server_kwargs or {}),
-            )
-        else:
-            self._server = app_cls(
-                __name__,
-                **(server_kwargs or {}),
-            )
-
-        self._server.route('/', methods=['PING', 'POST'])(self.__route)
+        routes = [
+            route('POST', '/', self.__route),
+        ]
 
         if http_interactions:
-            self._server.route('/interactions', methods=['POST'])(self.__interactions_route)
+            routes.append(
+                route(
+                    'POST', '/interactions', self.__interactions_route
+                )
+            )
 
+        self._server.add_routes(routes)
+        self.__runner: AppRunner = AppRunner(self._server)
+        self.__site: TCPSite | None = None
         self.__bot_task: asyncio.Task[None] | None = None
         self.__server_task: asyncio.Task[None] | None = None
-        self.__web_data: tuple[str, int] | None = None
         self.connect_to_ws: bool = connect_to_ws
 
-    async def __route(self) -> Any:
-        data = await request.json
+    async def __route(self, request: Request) -> Any:
+        data = await request.json()
         type = data.get('type')
 
         if type == 0:
@@ -311,16 +304,17 @@ class AutoShardedClient(discord.AutoShardedClient):
         else:
             return Response(status=400)
 
-    async def __interactions_route(self) -> Any:
-        data = await request.json
+    async def __interactions_route(self, request: Request) -> Response:
+        data = await request.json()
         type = data.get('type')
 
         if type == 1:
-            return jsonify({'type': 1})
+            return json_response({'type': 1})
         else:
             # this should work as expected because "data" is the
             # received interaction itself
             self._connection.parse_interaction_create(data)
+            return Response(status=204)
 
     def _dispatch_webhook_event(self, event: EventPayload) -> None:
         if event['type'] == 'APPLICATION_AUTHORIZED':
@@ -332,11 +326,10 @@ class AutoShardedClient(discord.AutoShardedClient):
                 self.dispatch('user_install', user, data['scopes'])
             else:
                 guild = self._connection._get_create_guild(guild_data)
-                self.dispatch('guild_install', guild, data['scopes'])
+                self.dispatch('guild_install', guild, user, data['scopes'])
         elif event['type'] == 'ENTITLEMENT_CREATE':
             data = event['data']
-            entitlement = discord.Entitlement(self._connection, data)
-            self.dispatch('entitlement_create', entitlement)
+            self._connection.parse_entitlement_create(data)
 
         # we donnot handle QUEST_USER_ENROLLMENT
         # see https://discord.com/developers/docs/events/webhook-events#quest-user-enrollment
@@ -354,8 +347,16 @@ class AutoShardedClient(discord.AutoShardedClient):
             bot_task = super().start(token, reconnect=reconnect)
         else:
             bot_task = self.login(token)
-        server_task = self._server.run_task(host, port, self._debug)
-        self.__web_data = (host, port)
+
+        await self.__runner.setup()
+        self.__site = TCPSite(
+            self.__runner,
+            host,
+            port,
+        )
+        server_task = self.__site.start()
+
+        
 
         self.__bot_task = asyncio.create_task(bot_task)
         self.__server_task = asyncio.create_task(server_task)
@@ -404,17 +405,8 @@ class AutoShardedClient(discord.AutoShardedClient):
             if self._ready is not MISSING:
                 self._ready.clear()
 
-            if self.__web_data is not None:
-                async with self.http._HTTPClient__session.get(  # type: ignore
-                    f'http://{self.__web_data[0]}:{self.__web_data[1]}/',
-                    json={
-                        'type': 0,
-                    }
-                ) as resp:
-                    close_server = 300 > resp.status >= 200
-
-            if close_server:
-                await self._server.shutdown()
+            if self.__site is not None:
+                await self.__site.stop()
 
             await self.http.close()
 
@@ -422,7 +414,6 @@ class AutoShardedClient(discord.AutoShardedClient):
 
         self._closing_task = asyncio.create_task(_close())
         await self._closing_task
-
 
 
 class Bot(commands.Bot):
@@ -435,7 +426,7 @@ class Bot(commands.Bot):
         The arguments to pass to :class:`discord.ext.commands.Bot`.
     debug: :class:`bool`
         Whether to print debug tracebacks when an error occurs.
-    app_cls: Type[:class:`quart.Quart`]
+    app_cls: Type[:class:`aiohttp.web.Application`]
         The type to instate for the server.
     server_kwargs: Dict[:class:`str`, Any]
         The kwargs to pass to ``app_cls`` constructor.
@@ -457,7 +448,7 @@ class Bot(commands.Bot):
         self,
         *args: Any,
         debug: bool = False,
-        app_cls: type[T] = Quart,
+        app_cls: type[T] = Application,
         server_kwargs: dict[str, Any] | None = None,
         http_interactions: bool = False,
         connect_to_ws: bool = True,
@@ -465,30 +456,28 @@ class Bot(commands.Bot):
     ) -> None:
         super().__init__(*args, **kwargs)
         self._debug: bool = debug
+        self._server = app_cls(**(server_kwargs or {}))
 
-        if app_cls is Quart:
-            self._server = Quart(
-                __name__,
-                **(server_kwargs or {}),
-            )
-        else:
-            self._server = app_cls(
-                __name__,
-                **(server_kwargs or {}),
-            )
-
-        self._server.route('/', methods=['PING', 'POST'])(self.__route)
+        routes = [
+            route('POST', '/', self.__route),
+        ]
 
         if http_interactions:
-            self._server.route('/interactions', methods=['POST'])(self.__interactions_route)
+            routes.append(
+                route(
+                    'POST', '/interactions', self.__interactions_route
+                )
+            )
 
+        self._server.add_routes(routes)
+        self.__runner: AppRunner = AppRunner(self._server)
+        self.__site: TCPSite | None = None
         self.__bot_task: asyncio.Task[None] | None = None
         self.__server_task: asyncio.Task[None] | None = None
-        self.__web_data: tuple[str, int] | None = None
         self.connect_to_ws: bool = connect_to_ws
 
-    async def __route(self) -> Any:
-        data = await request.json
+    async def __route(self, request: Request) -> Any:
+        data = await request.json()
         type = data.get('type')
 
         if type == 0:
@@ -500,16 +489,17 @@ class Bot(commands.Bot):
         else:
             return Response(status=400)
 
-    async def __interactions_route(self) -> Any:
-        data = await request.json
+    async def __interactions_route(self, request: Request) -> Response:
+        data = await request.json()
         type = data.get('type')
 
         if type == 1:
-            return jsonify({'type': 1})
+            return json_response({'type': 1})
         else:
             # this should work as expected because "data" is the
             # received interaction itself
             self._connection.parse_interaction_create(data)
+            return Response(status=204)
 
     def _dispatch_webhook_event(self, event: EventPayload) -> None:
         if event['type'] == 'APPLICATION_AUTHORIZED':
@@ -521,11 +511,10 @@ class Bot(commands.Bot):
                 self.dispatch('user_install', user, data['scopes'])
             else:
                 guild = self._connection._get_create_guild(guild_data)
-                self.dispatch('guild_install', guild, data['scopes'])
+                self.dispatch('guild_install', guild, user, data['scopes'])
         elif event['type'] == 'ENTITLEMENT_CREATE':
             data = event['data']
-            entitlement = discord.Entitlement(self._connection, data)
-            self.dispatch('entitlement_create', entitlement)
+            self._connection.parse_entitlement_create(data)
 
         # we donnot handle QUEST_USER_ENROLLMENT
         # see https://discord.com/developers/docs/events/webhook-events#quest-user-enrollment
@@ -543,8 +532,16 @@ class Bot(commands.Bot):
             bot_task = super().start(token, reconnect=reconnect)
         else:
             bot_task = self.login(token)
-        server_task = self._server.run_task(host, port, self._debug)
-        self.__web_data = (host, port)
+
+        await self.__runner.setup()
+        self.__site = TCPSite(
+            self.__runner,
+            host,
+            port,
+        )
+        server_task = self.__site.start()
+
+        
 
         self.__bot_task = asyncio.create_task(bot_task)
         self.__server_task = asyncio.create_task(server_task)
@@ -593,17 +590,8 @@ class Bot(commands.Bot):
             if self._ready is not MISSING:
                 self._ready.clear()
 
-            if self.__web_data is not None:
-                async with self.http._HTTPClient__session.get(  # type: ignore
-                    f'http://{self.__web_data[0]}:{self.__web_data[1]}/',
-                    json={
-                        'type': 0,
-                    }
-                ) as resp:
-                    close_server = 300 > resp.status >= 200
-
-            if close_server:
-                await self._server.shutdown()
+            if self.__site is not None:
+                await self.__site.stop()
 
             await self.http.close()
 
@@ -623,7 +611,7 @@ class AutoShardedBot(commands.AutoShardedBot):
         The arguments to pass to :class:`discord.ext.commands.AutoShardedBot`.
     debug: :class:`bool`
         Whether to print debug tracebacks when an error occurs.
-    app_cls: Type[:class:`quart.Quart`]
+    app_cls: Type[:class:`aiohttp.web.Application`]
         The type to instate for the server.
     server_kwargs: Dict[:class:`str`, Any]
         The kwargs to pass to ``app_cls`` constructor.
@@ -645,7 +633,7 @@ class AutoShardedBot(commands.AutoShardedBot):
         self,
         *args: Any,
         debug: bool = False,
-        app_cls: type[T] = Quart,
+        app_cls: type[T] = Application,
         server_kwargs: dict[str, Any] | None = None,
         http_interactions: bool = False,
         connect_to_ws: bool = True,
@@ -653,30 +641,28 @@ class AutoShardedBot(commands.AutoShardedBot):
     ) -> None:
         super().__init__(*args, **kwargs)
         self._debug: bool = debug
+        self._server = app_cls(**(server_kwargs or {}))
 
-        if app_cls is Quart:
-            self._server = Quart(
-                __name__,
-                **(server_kwargs or {}),
-            )
-        else:
-            self._server = app_cls(
-                __name__,
-                **(server_kwargs or {}),
-            )
-
-        self._server.route('/', methods=['PING', 'POST'])(self.__route)
+        routes = [
+            route('POST', '/', self.__route),
+        ]
 
         if http_interactions:
-            self._server.route('/interactions', methods=['POST'])(self.__interactions_route)
+            routes.append(
+                route(
+                    'POST', '/interactions', self.__interactions_route
+                )
+            )
 
+        self._server.add_routes(routes)
+        self.__runner: AppRunner = AppRunner(self._server)
+        self.__site: TCPSite | None = None
         self.__bot_task: asyncio.Task[None] | None = None
         self.__server_task: asyncio.Task[None] | None = None
-        self.__web_data: tuple[str, int] | None = None
         self.connect_to_ws: bool = connect_to_ws
 
-    async def __route(self) -> Any:
-        data = await request.json
+    async def __route(self, request: Request) -> Any:
+        data = await request.json()
         type = data.get('type')
 
         if type == 0:
@@ -688,16 +674,17 @@ class AutoShardedBot(commands.AutoShardedBot):
         else:
             return Response(status=400)
 
-    async def __interactions_route(self) -> Any:
-        data = await request.json
+    async def __interactions_route(self, request: Request) -> Response:
+        data = await request.json()
         type = data.get('type')
 
         if type == 1:
-            return jsonify({'type': 1})
+            return json_response({'type': 1})
         else:
             # this should work as expected because "data" is the
             # received interaction itself
             self._connection.parse_interaction_create(data)
+            return Response(status=204)
 
     def _dispatch_webhook_event(self, event: EventPayload) -> None:
         if event['type'] == 'APPLICATION_AUTHORIZED':
@@ -709,11 +696,10 @@ class AutoShardedBot(commands.AutoShardedBot):
                 self.dispatch('user_install', user, data['scopes'])
             else:
                 guild = self._connection._get_create_guild(guild_data)
-                self.dispatch('guild_install', guild, data['scopes'])
+                self.dispatch('guild_install', guild, user, data['scopes'])
         elif event['type'] == 'ENTITLEMENT_CREATE':
             data = event['data']
-            entitlement = discord.Entitlement(self._connection, data)
-            self.dispatch('entitlement_create', entitlement)
+            self._connection.parse_entitlement_create(data)
 
         # we donnot handle QUEST_USER_ENROLLMENT
         # see https://discord.com/developers/docs/events/webhook-events#quest-user-enrollment
@@ -731,8 +717,16 @@ class AutoShardedBot(commands.AutoShardedBot):
             bot_task = super().start(token, reconnect=reconnect)
         else:
             bot_task = self.login(token)
-        server_task = self._server.run_task(host, port, self._debug)
-        self.__web_data = (host, port)
+
+        await self.__runner.setup()
+        self.__site = TCPSite(
+            self.__runner,
+            host,
+            port,
+        )
+        server_task = self.__site.start()
+
+        
 
         self.__bot_task = asyncio.create_task(bot_task)
         self.__server_task = asyncio.create_task(server_task)
@@ -781,17 +775,8 @@ class AutoShardedBot(commands.AutoShardedBot):
             if self._ready is not MISSING:
                 self._ready.clear()
 
-            if self.__web_data is not None:
-                async with self.http._HTTPClient__session.get(  # type: ignore
-                    f'http://{self.__web_data[0]}:{self.__web_data[1]}/',
-                    json={
-                        'type': 0,
-                    }
-                ) as resp:
-                    close_server = 300 > resp.status >= 200
-
-            if close_server:
-                await self._server.shutdown()
+            if self.__site is not None:
+                await self.__site.stop()
 
             await self.http.close()
 
