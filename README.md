@@ -43,7 +43,7 @@ async def on_user_install(user: discord.User, scopes: list[str]) -> None:
 
 @client.event
 async def on_guild_install(guild: discord.Guild, user: discord.User, scopes: list[str]) -> None:
-    await user.send(f'Thanks for insatll the app to {guild.name}!')
+    await user.send(f'Thanks for installing the app to {guild.name}!')
 
 client.run(
     token='YOUR_BOT_TOKEN',
