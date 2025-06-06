@@ -143,6 +143,10 @@ class Client(discord.Client):
             else:
                 guild = self._connection._get_create_guild(guild_data)
                 self.dispatch('guild_install', guild, user, data['scopes'])
+        elif event['type'] == 'APPLICATION_DEAUTHORIZED':
+            data = event['data']
+            user = discord.User(state=self._connection, data=data['user'])
+            self.dispatch('uninstall', user)
         elif event['type'] == 'ENTITLEMENT_CREATE':
             data = event['data']
             self._connection.parse_entitlement_create(data)

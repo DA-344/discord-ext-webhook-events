@@ -48,6 +48,11 @@ class ApplicationAuthorisedEvent(TypedDict):
     data: ApplicationAuthorisedEventData
 
 
+class ApplicationDeauthorisedEvent(TypedDict):
+    type: Literal['APPLICATION_DEAUTHORIZED']
+    data: dict[Literal['user'], User]
+
+
 class EntitlementCreateEvent(TypedDict):
     type: Literal['ENTITLEMENT_CREATE']
     timestamp: str
@@ -61,4 +66,4 @@ class ApplicationAuthorisedEventData(TypedDict):
     guild: NotRequired[Guild]
 
 
-Event = Union[ApplicationAuthorisedEvent, EntitlementCreateEvent]
+Event = Union[ApplicationAuthorisedEvent, ApplicationDeauthorisedEvent, EntitlementCreateEvent]
