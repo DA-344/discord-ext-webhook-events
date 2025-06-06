@@ -71,6 +71,13 @@ Event dispatched when the app is installed on a guild.
 - ``user`` ([``discord.User``](https://discordpy.readthedocs.io/en/stable/api.html#discord.User)) - The user that installed the app into the ``guild``.
 - ``scopes`` (List[[``str``](https://docs.python.org/3.13/library/stdtypes.html#str)]) - The scopes that ``user`` authorised to add the app into ``guild``.
 
+### `on_uninstall(user)`
+
+Event dispatched when the app is uninstalled.
+
+**Parameters:**
+- ``user`` ([``discord.User``](https://discordpy.readthedocs.io/en/stable/api.html#discord.User)) - The user that uninstalled the app.
+
 ### `on_entitlement_create(entitlement)`
 
 Event dispatched when an entitlement is created.
