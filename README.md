@@ -86,4 +86,4 @@ Event dispatched when an entitlement is created.
 > Although this event can be received via the Gateway, if you suscribe to it on the Developer Portal, you will receive it here
 
 **Parameters:**
-- ``entitlement`` ([``discord.Entitlement``](https://discordpy.readthedocs.io/en/stable/api#discord.Entitlement)) - The entitlement that was created.
+- ``entitlement`` ([``discord.Entitlement``](https://discordpy.readthedocs.io/en/stable/api.html#discord.Entitlement)) - The entitlement that was created.
